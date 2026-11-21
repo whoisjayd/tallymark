@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tallymark demo</title>
+    <!--
+      This one tag is the whole integration.
+      data-localhost lets it record from localhost (it skips localhost by default).
+      data-outbound / data-downloads also track those link clicks.
+    -->
+    <script defer src="/analytics/script.js" data-localhost="true" data-outbound="true" data-downloads="true"></script>
+  </head>
+  <body>
+    <h1>Tallymark demo</h1>
+    <p>Loading this page already recorded a pageview.</p>
+
+    <!-- A custom event with props: just attributes, no JavaScript. -->
+    <button type="button" id="signup" data-tally="Signup" data-tally-plan="pro">Sign up (event + prop)</button>
+
+    <!-- A custom event with a numeric value (revenue), from JavaScript. -->
+    <button type="button" id="buy" onclick="tallymark.track('Purchase', { sku: 'A1' }, 49)">Buy (event + value)</button>
+
+    <!-- A single-page-app navigation: changes the URL without a page load. -->
+    <button type="button" id="spa" onclick="history.pushState({}, '', '/pricing')">Go to /pricing (SPA)</button>
+
+    <p>
+      <a id="out" href="https://example.org/docs?token=secret">Outbound link</a>
+      ·
+      <a id="dl" href="/report.pdf" onclick="return false">Download</a>
+    </p>
+  </body>
+</html>

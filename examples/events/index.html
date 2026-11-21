@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Custom events: every way to add one</title>
+
+    <!--
+      THE ONLY SETUP. This one tag gives you, with no further code:
+        • a pageview on load, and on every client-side navigation
+        • the referrer and ?utm_* campaign, browser, OS, device, language, screen size
+        • country / region / city (from your host's headers, nothing extra to configure)
+        • time on page and scroll depth, reported when the visitor leaves
+
+      Optional switches (all off by default except pageviews and time on page):
+        data-outbound="true"     record clicks on links to other sites   -> event "outbound"
+        data-downloads="true"    record clicks on .pdf/.zip/... links    -> event "download"
+        data-engagement="false"  turn off time on page / scroll depth
+        data-localhost="true"    also record from localhost (skipped by default)
+    -->
+    <script defer src="/analytics/script.js" data-localhost="true" data-outbound="true" data-downloads="true"></script>
+  </head>
+
+  <body>
+    <h1>Custom events</h1>
+    <p>
+      Pageviews, sources, devices, locations and time on page are automatic. Everything below is for
+      the things only <em>you</em> know matter: a signup, a purchase, a feature being used.
+    </p>
+
+    <!--
+      WAY 1: HTML attributes. No JavaScript.
+      data-tally="<event name>" sends that event when the element is clicked.
+      data-tally-<name>="<value>" adds a property called <name>.
+      Here: event "Signup" with the property plan = "pro".
+    -->
+    <h2>1. Attributes</h2>
+    <button type="button" id="signup" data-tally="Signup" data-tally-plan="pro" data-tally-source="pricing-page">Start free trial</button>
+
+    <!--
+      WAY 2: JavaScript. tallymark.track(name, properties?, value?)
+        name        what happened, as a short stable label: "Purchase", "VideoPlayed", "SearchUsed"
+        properties  extra facts you can break the event down by later (flat: strings, numbers, booleans)
+        value       a number to add up, usually revenue. The API sums it for you.
+      window.tallymark exists as soon as the script has loaded; the ?. keeps this safe
+      if it was blocked or has not loaded yet.
+    -->
+    <h2>2. JavaScript</h2>
+    <button type="button" id="buy" onclick="window.tallymark?.track('Purchase', { sku: 'A1', currency: 'EUR' }, 49)">Buy for 49 EUR</button>
+
+    <!-- Same idea after something happens in your own code: a form, a search, a toggle. -->
+    <form id="search" onsubmit="event.preventDefault(); window.tallymark?.track('Search', { results: 12, query_length: this.q.value.length })">
+      <input name="q" placeholder="Search…" />
+      <button type="submit">Search</button>
+    </form>
+
+    <!-- A/B tests and feature flags: record which variant the visitor saw, then compare conversions. -->
+    <button type="button" id="variant" onclick="window.tallymark?.track('PricingToggle', { variant: 'annual' })">Show annual pricing</button>
+
+    <!--
+      WAY 3: automatic. No code at all, once enabled on the script tag above.
+        <a href="https://other-site.example/docs">    -> event "outbound"  { url: "https://other-site.example/docs" }
+        <a href="/files/report.pdf">                  -> event "download"  { file: "/files/report.pdf" }
+      The query string of an outbound link is dropped on purpose: it often contains tokens.
+    -->
+    <h2>3. Automatic</h2>
+    <p>
+      <a id="out" href="https://example.org/docs?token=secret" target="_blank">Outbound link</a> ·
+      <a id="dl" href="/files/report.pdf" onclick="return false">Download report.pdf</a>
+    </p>
+
+    <!--
+      WAY 4: single-page apps. Changing the URL with the History API is a pageview.
+      Nothing to call: the script listens for it.
+    -->
+    <h2>4. Navigation without a page load</h2>
+    <button type="button" id="spa" onclick="history.pushState({}, '', '/pricing')">Go to /pricing (no reload)</button>
+
+    <!--
+      WAY 5: from your server. Events the browser cannot see (a payment webhook, a cron job,
+      an API call) are recorded in server.ts with tm.trackRequest(...) or tm.track(...).
+      This button calls a route that does exactly that.
+    -->
+    <h2>5. From the server</h2>
+    <button type="button" id="subscribe" onclick="fetch('/api/subscribe', { method: 'POST', body: JSON.stringify({ plan: 'newsletter' }) })">Subscribe (server records it)</button>
+
+    <p><a href="/stats">See what was recorded →</a></p>
+  </body>
+</html>
