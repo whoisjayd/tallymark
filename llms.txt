@@ -1,0 +1,235 @@
+# tallymark
+
+> Privacy-first, cookieless web analytics as a TypeScript library, an HTTP API, and a 4 KB browser script. It counts visitors, pageviews, sources, devices, locations, custom events, time on page and visitor paths, and stores nothing that identifies a person. Zero runtime dependencies. ESM only. License: AGPL-3.0-only.
+
+Read this file first. It tells you which integration to pick, gives copy-exact code for each supported platform, the rules to follow, and how to verify the result. After `npm i tallymark` the same file, the docs and runnable examples are on disk at `node_modules/tallymark/llms.txt`, `node_modules/tallymark/docs/` and `node_modules/tallymark/examples/`.
+
+## What it is, in five facts
+
+- One engine, three ways in: a **browser script** (`<script src=".../script.js">`), **server code** (`tm.trackRequest(request, ...)`), and an **HTTP API** (`POST /collect`, `GET /api/...`) usable from any language.
+- A visitor is `sha256(secret + UTC date + hostname + IP + User-Agent)`. It changes every day. No cookies, no storage on the visitor's device, no IP or raw User-Agent stored.
+- The browser script records pageviews (including single-page-app navigation), referrer, UTM campaign, browser, OS, device, language, screen size, time on page and scroll depth automatically. Country, region, city and timezone come from Cloudflare or Vercel headers automatically.
+- The only code a developer writes is **custom events** (`Signup`, `Purchase`), and optionally reading numbers back.
+- Storage is pluggable: memory (default, lost on restart), SQLite file, PostgreSQL, Cloudflare D1, Turso, Upstash Redis.
+
+## Choose the integration
+
+| The user wants | Do this |
+|---|---|
+| Analytics on a website, no server code to write | Recipe 1 (run `bunx tallymark` or the Docker image, add one script tag) |
+| Analytics inside a Next.js app on Vercel | Recipe 2 |
+| Analytics on a Vercel project that is not Next.js | Recipe 3 |
+| Analytics on Cloudflare Workers | Recipe 4 |
+| Analytics inside an Express or plain Node server | Recipe 5 |
+| Hono, Elysia, SvelteKit, Astro, Deno, Bun.serve, or any Fetch framework | Recipe 6 |
+| A React, Vite or Create React App single-page app | Recipe 7, plus a server from Recipe 1 to 6 |
+| Events from a Python, Go, PHP, Ruby, Java or other backend | Recipe 8 |
+| Counting inside a program with no browser and no server | Recipe 9 |
+
+Pick exactly one server recipe (1 to 6). Recipe 7 is an addition for client-side React. Do not install two instances.
+
+## Recipes
+
+### Recipe 1: standalone server, any website
+
+```bash
+bunx tallymark   # needs Bun. Or use the Docker image below.
+```
+
+Required environment: `TALLYMARK_SECRET` (long random, `openssl rand -hex 32`), `TALLYMARK_API_KEY` (long random). Storage: `TALLYMARK_DB=./tallymark.db` (SQLite, default), `:memory:`, or `postgres://user:pass@host/db`; or `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`. Set `TALLYMARK_HOSTS=example.com` to record only your site. Set `TALLYMARK_TRUST_PROXY=true` only when a proxy you control (Caddy, nginx, Cloudflare) sets the client IP headers.
+
+```bash
+docker build -t tallymark . && docker run -p 3000:3000 -v stats:/data -e TALLYMARK_SECRET=... -e TALLYMARK_API_KEY=... tallymark
+```
+
+Add to every page, in `<head>`:
+
+```html
+<script defer src="https://stats.example.com/script.js"></script>
+```
+
+### Recipe 2: Next.js App Router on Vercel
+
+```bash
+npm i tallymark pg
+```
+
+```ts
+// lib/analytics.ts
+import { createTallymark } from 'tallymark'
+import { pgStore } from 'tallymark/stores'
+import { Pool } from 'pg'
+
+export const analytics = createTallymark({
+  store: pgStore(new Pool({ connectionString: process.env.DATABASE_URL })),
+  secret: process.env.ANALYTICS_SECRET,
+  apiKey: process.env.ANALYTICS_API_KEY,
+  basePath: '/api/analytics',
+  onError: (error, { where }) => console.error('[tallymark]', where, error),
+})
+```
+
+```ts
+// app/api/analytics/[...route]/route.ts
+import { vercel } from 'tallymark/vercel'
+import { analytics } from '@/lib/analytics'
+export const { GET, POST, OPTIONS } = vercel(analytics)
+```
+
+```tsx
+// app/layout.tsx: inside <body>
+import { Analytics } from 'tallymark/react'
+<Analytics api="/api/analytics" outbound downloads />
+```
+
+Environment variables: `DATABASE_URL`, `ANALYTICS_SECRET`, `ANALYTICS_API_KEY`. For Neon over HTTP use `pgStore(neon(process.env.DATABASE_URL!))` from `@neondatabase/serverless` instead of `pg`. Optional retention: set `retentionDays: 395` and add `app/api/analytics-cron/route.ts` with `export const GET = vercelCron(analytics, { secret: process.env.CRON_SECRET })` and `vercel.json` `{ "crons": [{ "path": "/api/analytics-cron", "schedule": "0 3 * * *" }] }`. Vercel supplies location headers; nothing else to configure. Do not use `memoryStore` or a SQLite file on Vercel: serverless instances do not share memory or disk.
+
+### Recipe 3: Vercel without Next.js
+
+Create `api/analytics.ts` exporting `GET`, `POST`, `OPTIONS` from `vercel(analytics)`, using `basePath: '/api/analytics'` and a serverless store such as `upstashRestStore({ url: process.env.UPSTASH_REDIS_REST_URL!, token: process.env.UPSTASH_REDIS_REST_TOKEN! })`. Add to `vercel.json`: `{ "rewrites": [{ "source": "/api/analytics/:path*", "destination": "/api/analytics" }] }`. Add `<script defer src="/api/analytics/script.js"></script>` to your pages. Full files: `examples/frameworks/vercel/`.
+
+### Recipe 4: Cloudflare Workers
+
+```ts
+import { cloudflare } from 'tallymark/cloudflare'
+import { d1Store } from 'tallymark/stores'
+
+export default cloudflare<Env>((env) => ({
+  store: d1Store(env.DB),
+  secret: env.SECRET,
+  apiKey: env.API_KEY,
+  retentionDays: 395,
+}))
+```
+
+`wrangler.toml` needs a `[[d1_databases]]` binding named `DB` and `[triggers] crons = ["0 3 * * *"]` for the retention sweep. Create secrets with `wrangler secret put SECRET` and `wrangler secret put API_KEY`. The table is created on first use. Location comes from `request.cf` automatically. Full file: `examples/frameworks/cloudflare.ts`.
+
+### Recipe 5: Express and Node
+
+```ts
+import { createTallymark } from 'tallymark'
+import { nodeHandler, nodeRequest, nodeConn } from 'tallymark/node'
+
+const analytics = createTallymark({ secret, apiKey, basePath: '/analytics', trustProxy: false })
+app.use('/analytics', nodeHandler(analytics))
+// A server-side event from your own route (reads IP, browser, language, location from the request):
+await analytics.trackRequest(nodeRequest(req), { name: 'Subscribe', props: { plan }, value: 5 }, nodeConn(req))
+```
+
+`basePath` must equal the mount path. Set `trustProxy: true` (in both places) only behind a proxy you control. Page tag: `<script defer src="/analytics/script.js"></script>`.
+
+### Recipe 6: any Fetch framework
+
+`analytics.handle(request)` takes a `Request` and returns a `Response`. Set `basePath` to the mount path.
+
+```ts
+app.all('/analytics/*', (c) => analytics.handle(c.req.raw))                    // Hono
+export { handler as GET, handler as POST, handler as OPTIONS }                 // SvelteKit src/routes/analytics/[...path]/+server.ts, with handler = ({ request }) => analytics.handle(request)
+export const ALL = ({ request }) => analytics.handle(request)                  // Astro src/pages/analytics/[...path].ts (SSR required)
+Bun.serve({ fetch: (req, server) => analytics.handle(req, { ip: server.requestIP(req)?.address }) })
+Deno.serve((req, info) => analytics.handle(req, { ip: info.remoteAddr.hostname }))
+```
+
+### Recipe 7: React single-page app
+
+```tsx
+import { Analytics, track } from 'tallymark/react'
+<Analytics api="https://stats.example.com" outbound downloads />   // once, near the root; renders nothing
+track('Purchase', { sku: 'A1' }, 49)                               // a custom event from anywhere
+```
+
+Route changes are tracked automatically. `api` is where the server from Recipes 1 to 6 lives (use a same-origin path when you can).
+
+### Recipe 8: other languages (HTTP)
+
+Send hits with `POST {base}/collect`, JSON body `{ "url": "https://site/page", "name": "Signup", "props": { "plan": "pro" }, "value": 49 }` (omit `name` for a pageview). **Forward the visitor's real `User-Agent` and `X-Forwarded-For` headers**, otherwise every visitor looks like your server. The server must run with `TALLYMARK_TRUST_PROXY=true` (or `trustProxy: true`) to read `X-Forwarded-For`. Read with `GET {base}/api/...` and `Authorization: Bearer <apiKey>`. `202` means recorded or deliberately ignored. Complete, tested programs: `examples/http/` (curl, Python, Go, PHP, Ruby, Java).
+
+### Recipe 9: library only
+
+```ts
+import { createTallymark } from 'tallymark'
+const tm = createTallymark({ secret: process.env.SECRET })
+await tm.track({ url: 'https://app.example/start', ip, userAgent })   // pageview
+await tm.summary('7d')
+```
+
+## Custom events
+
+Pageviews, sources, devices, location, time on page and scroll depth are automatic. Add an event only for something that matters to the business. Name events in PascalCase and keep the set small and stable (`Signup`, `Purchase`, `Search`).
+
+```html
+<button data-tally="Signup" data-tally-plan="pro">Start</button>               <!-- attribute, no JS; data-tally-<name> becomes a property -->
+<button onclick="tallymark.track('Purchase', { sku: 'A1' }, 49)">Buy</button>   <!-- name, properties, value to sum (revenue) -->
+```
+
+```ts
+await tm.trackRequest(request, { name: 'Subscribe', props: { plan: 'free' }, value: 5 })   // from a server route
+await tm.track({ url, name: 'Purchase', props: { sku: 'A1' }, value: 49 })                 // no request available (a webhook)
+```
+
+Properties are flat (strings, numbers, booleans), at most 20. Links to other sites and file downloads become `outbound` and `download` events when the script tag has `data-outbound="true"` or `data-downloads="true"`.
+
+## Reading the numbers
+
+Over HTTP (needs the API key): `GET /api/summary`, `/api/compare`, `/api/timeseries`, `/api/top?by=<dimension>`, `/api/funnel?steps=/pricing,event:Signup`, `/api/sessions`, `/api/journeys`, `/api/realtime`, `/api/events`, `/api/export.csv`, `/api/export.ndjson`. Add `?range=1h|24h|7d|30d|90d|365d` and filters such as `&country=DE&device=mobile&prop:plan=pro`.
+
+In code: `tm.summary(range, filters)`, `tm.compare`, `tm.timeseries`, `tm.top(dimension, range, filters, limit)`, `tm.funnel(steps, range)`, `tm.sessions`, `tm.journeys`, `tm.realtime`.
+
+Dimensions: `path entry_page exit_page hostname referrer source channel utm_source utm_medium utm_campaign utm_term utm_content country continent region city timezone language browser browser_version os os_version device screen event weekday hour` and `prop:<name>` for any custom property. `top('event')` and `top('prop:plan')` count events and add up their `value`. Never call the read API from browser code: the API key is a secret.
+
+## Rules
+
+1. **Secrets.** Generate `secret` and `apiKey` with `openssl rand -hex 32`. Read them from environment variables. Never commit them and never put them in client code. Without `apiKey` the read API is off, which is correct for a write-only deployment.
+2. **One script tag.** Add exactly one `<script defer src=".../script.js">`. Do not also call `tallymark.pageview()` unless `data-auto="false"`.
+3. **`basePath` must equal the mount path** the handler is served under (for example `/api/analytics`). A mismatch makes every route a 404.
+4. **Persistent storage on serverless.** Vercel and Cloudflare instances do not share memory or disk. Use Postgres, Upstash, Turso or D1 there. `memoryStore` is for tests and demos only.
+5. **`trustProxy`.** Leave it on only when Cloudflare, Vercel or a proxy you control sets the client IP headers. If the server is exposed directly, set it to `false`, otherwise visitors can forge their IP.
+6. **No personal data** (emails, names, user ids) in event names or properties.
+7. **No cookies, no consent banner code, no fingerprinting.** Tallymark is designed not to need them. Do not add them.
+8. **Serve the script first-party** (same origin or a path on the site's own domain, such as `/analytics/script.js`) to avoid blocklists.
+9. **ESM only.** Use `import`, not `require`.
+10. **Restrict writes** with `allowedHosts: ['example.com']` and `strictOrigin: true` so other sites cannot add to the numbers.
+11. **Connect `onError`** to the app's logger; failures are otherwise swallowed on purpose so analytics never breaks a request.
+
+## Verify
+
+```bash
+# 1. The server is up
+curl -fsS $BASE/health                                              # {"ok":true}
+# 2. Send a hit. Use a browser-like User-Agent: curl's default is treated as a bot and ignored.
+curl -fsS -X POST $BASE/collect -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36' -d '{"url":"https://example.com/"}'
+# 3. Read it back
+curl -fsS -H "Authorization: Bearer $KEY" "$BASE/api/summary?range=1h"    # "pageviews":1
+# 4. In a real browser: open the site, then check /api/top?by=path and /api/top?by=device
+```
+
+## Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `/collect` answers 202 but nothing is stored | The hit was deliberately ignored: a bot-like User-Agent (curl, scripts), `DNT`/`Sec-GPC`, an excluded IP, a host not in `allowedHosts`, or referrer spam. Test with a browser-like User-Agent. In code, `track()` returns `{ ok: false, reason }`. |
+| The script sends nothing on localhost | Intended. Add `data-localhost="true"` to the script tag while developing. |
+| Nothing is sent from an automated browser | Intended. The script ignores `navigator.webdriver`. |
+| Every route is 404 | `basePath` does not match the mount path, or the catch-all route file is missing. |
+| `/api/*` answers 401 | No `apiKey` configured, or the `Authorization: Bearer <key>` header is missing or wrong. |
+| Country, city and timezone are empty | The host provides no location headers (only Cloudflare and Vercel do). Pass `country` and friends yourself, or accept empty fields. Tallymark never calls a geolocation service. |
+| All visitors count as one | No IP is available. Behind a proxy set `trustProxy: true`; from another language forward `X-Forwarded-For`; on Bun/Deno pass `{ ip }` to `handle()`. |
+| Visitors are counted twice or inflated | `trustProxy` is on while the server is exposed directly (IPs can be forged), or two instances share traffic with different `secret` values. |
+| Data vanishes after a restart or deploy | `memoryStore` (the default) or a file on an ephemeral disk. Use a persistent store. |
+| Browser console shows a CORS error | `allowedOrigins` excludes the site. The default `'*'` allows all. Send the hit as `text/plain` (the script does) to avoid a preflight. |
+| `track()` returns `reason: 'storage'` | The database is unreachable or misconfigured. The error is passed to `onError`. |
+
+## Documentation
+
+- [How it works](https://unpkg.com/tallymark@latest/docs/HOW_IT_WORKS.md): event model, visitor hash, sessions, attribution, time on page, privacy, limits.
+- [Usage reference](https://unpkg.com/tallymark@latest/docs/USAGE.md): every option, method, dimension, endpoint, tracker setting and CLI variable.
+- [Deployment](https://unpkg.com/tallymark@latest/docs/DEPLOYMENT.md): Cloudflare, Vercel, Docker, reverse proxies, retention and backups.
+- [Examples index](https://unpkg.com/tallymark@latest/examples/README.md): runnable, commented, each marked with how it is verified.
+- [README](https://unpkg.com/tallymark@latest/README.md): overview.
+
+## Optional
+
+- [Custom events, every way](https://unpkg.com/tallymark@latest/examples/events/server.ts): attributes, JavaScript, server-side, automatic, read back.
+- [Every report](https://unpkg.com/tallymark@latest/examples/library/reports.ts): each question the library can answer.
+- [Every store](https://unpkg.com/tallymark@latest/examples/library/stores.ts): memory, SQLite, Postgres, Upstash, mirror.
+- [Security policy](https://unpkg.com/tallymark@latest/SECURITY.md): threat model and deployment checklist.
