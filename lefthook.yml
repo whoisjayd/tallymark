@@ -1,0 +1,11 @@
+pre-commit:
+  commands:
+    check:
+      glob: "*.{js,jsx,ts,tsx,json,jsonc,css,mjs,cjs}"
+      run: bunx biome check --write --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+      stage_fixed: true
+
+commit-msg:
+  commands:
+    conventional:
+      run: bun scripts/commit-msg.ts {1}

@@ -1,0 +1,118 @@
+{
+  "name": "tallymark",
+  "version": "0.1.0",
+  "description": "Privacy-first, cookieless web analytics. A tiny typed library, a drop-in HTTP API and a browser script. Runs on Bun, Node, Cloudflare Workers, Vercel and any Fetch runtime.",
+  "license": "AGPL-3.0-only",
+  "author": "tallymark contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/whoisjayd/tallymark.git"
+  },
+  "homepage": "https://github.com/whoisjayd/tallymark#readme",
+  "bugs": {
+    "url": "https://github.com/whoisjayd/tallymark/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "keywords": [
+    "analytics",
+    "web-analytics",
+    "privacy",
+    "cookieless",
+    "gdpr",
+    "self-hosted",
+    "cloudflare-workers",
+    "bun",
+    "plausible-alternative",
+    "postgres",
+    "upstash"
+  ],
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "llms.txt",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "bin": {
+    "tallymark": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./stores": {
+      "types": "./dist/stores.d.ts",
+      "import": "./dist/stores.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare.d.ts",
+      "import": "./dist/cloudflare.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
+    },
+    "./package.json": "./package.json",
+    "./vercel": {
+      "types": "./dist/vercel.d.ts",
+      "import": "./dist/vercel.js"
+    }
+  },
+  "scripts": {
+    "dev": "bun --watch src/cli.ts",
+    "start": "bun src/cli.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "format": "biome check --write .",
+    "lint": "biome ci .",
+    "check": "biome ci . && bun run typecheck && bun test",
+    "prepare": "bun scripts/install-hooks.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "smoke": "bun scripts/smoke.ts",
+    "validate": "publint --strict && attw --pack . --profile esm-only",
+    "services": "docker compose up -d --wait",
+    "test:services": "TM_PG_URL=postgres://postgres:pw@127.0.0.1:55432/stats TM_UPSTASH_URL=http://127.0.0.1:58079 TM_UPSTASH_TOKEN=tok bun test test/stores.test.ts",
+    "prepublishOnly": "bun run check && bun run build && bun run smoke && bun run validate"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@biomejs/biome": "^2.6.8",
+    "@electric-sql/pglite": "^0.5.17",
+    "@types/bun": "latest",
+    "@types/express": "^5.0.6",
+    "@types/pg": "^8.23.1",
+    "@types/react": "19",
+    "@types/react-dom": "^19.3.0",
+    "@upstash/redis": "^1.41.0",
+    "express": "^5.3.0",
+    "hono": "^4.13.19",
+    "lefthook": "^2.2.2",
+    "pg": "^8.23.1",
+    "publint": "^0.3.25",
+    "react": "19",
+    "react-dom": "^19.3.1",
+    "typescript": "^5.6.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  }
+}

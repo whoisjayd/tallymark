@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+.github
+test
+docs
+examples
+assets
+*.db
+.env*
