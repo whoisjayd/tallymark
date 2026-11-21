@@ -84,7 +84,7 @@ Three ideas are enough to use it:
 
 - **An event** is one thing that happened: a pageview, or a custom event you name (`Signup`, `Purchase`). It records the page, where the visitor came from, their browser and device, a coarse location, and any properties or value you attach. It never contains an IP address or a raw User-Agent.
 - **A visitor** is `hash(secret + today's date + site + IP + User-Agent)`. It lets Tallymark count unique people without storing who they are. Tomorrow the same person gets a different hash, so nobody (including you) can follow them across days.
-- **A session** is one visit: a visitor's events, split when they go quiet for 30 minutes. Sessions are rebuilt when you ask a question, which is how bounce rate, time on site, entry and exit pages, and the path each visitor took are computed with no extra storage.
+- **A session** is one visit: a visitor's events, split when they go quiet for 30 minutes. A long read stays in that visit, because the engagement beacon counts as activity on the page it belongs to. Sessions are rebuilt when you ask a question, which is how bounce rate, time on site, entry and exit pages, and the path each visitor took are computed with no extra storage.
 
 ### What is automatic, and what you write
 

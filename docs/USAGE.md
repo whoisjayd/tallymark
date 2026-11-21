@@ -151,7 +151,7 @@ Settings are `data-` attributes on the tag:
 | `data-outbound` | off | `"true"` records clicks on links to other sites as `outbound` |
 | `data-downloads` | off | `"true"` records clicks on files as `download` |
 | `data-engagement` | on | `"false"` turns off time on page and scroll depth |
-| `data-localhost` | off | `"true"` also records from `localhost` |
+| `data-localhost` | off | `"true"` also records from `localhost`, `127.0.0.1` and `::1` |
 
 `window.tallymark` has `track(name, props?, value?)` and `pageview()`. An element with `data-tally="Name"` sends that event when clicked, and `data-tally-<name>="value"` attributes become its properties.
 

@@ -156,11 +156,21 @@ export function createTallymark(options: TallymarkOptions = {}): Tallymark {
 
   const load = async (r: RangeInput | undefined, filters: Filters = {}, limit?: number) => {
     const range = resolve(r)
-    const events = q.inheritAttribution(
-      await store.list({ ...range, limit }),
-      sessionMinutes * 60_000,
+    const cap =
+      typeof limit === 'number' && Number.isFinite(limit) && limit > 0
+        ? Math.floor(limit)
+        : undefined
+    // A filter has to see the whole range. Limiting first keeps the newest rows,
+    // then drops the ones that do not match, and the caller gets nothing.
+    const filtering = Object.values(filters).some((v) => v !== undefined && v !== '')
+    const events = q.applyFilters(
+      q.inheritAttribution(
+        await store.list({ ...range, limit: filtering ? undefined : cap }),
+        sessionMinutes * 60_000,
+      ),
+      filters,
     )
-    return { range, events: q.applyFilters(events, filters) }
+    return { range, events: cap !== undefined ? events.slice(-cap) : events }
   }
 
   const engine: Tallymark = {
@@ -316,7 +326,8 @@ export function createTallymark(options: TallymarkOptions = {}): Tallymark {
     },
 
     async events(range, filters, limit = 1000) {
-      return (await load(range, filters, limit)).events
+      const max = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 1000
+      return (await load(range, filters, max)).events
     },
 
     async export(range, filters) {

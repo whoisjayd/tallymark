@@ -51,6 +51,15 @@ describe('parsing', () => {
     ).toMatchObject({ os: 'macOS', osVersion: null })
     expect(parseUserAgent('Googlebot/2.1').bot).toBe(true)
     expect(parseUserAgent('').bot).toBe(true)
+    // Cubot is a phone brand. The letters "bot" in the model are not a crawler.
+    const cubot =
+      'Mozilla/5.0 (Linux; Android 12; CUBOT X50) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Mobile Safari/537.36'
+    expect(parseUserAgent(cubot)).toMatchObject({
+      browser: 'Chrome',
+      os: 'Android',
+      device: 'mobile',
+      bot: false,
+    })
   })
 
   test('urls keep only campaign params', () => {

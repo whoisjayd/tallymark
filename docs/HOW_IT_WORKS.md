@@ -51,7 +51,7 @@ Consequences you should know about:
 
 ## The session
 
-A session is one visit. Events from the same visitor belong to the same session until they are quiet for 30 minutes (`sessionMinutes`). Sessions are not stored; they are rebuilt from events whenever a question needs them. That is how Tallymark answers:
+A session is one visit. Events from the same visitor belong to the same session until they are quiet for 30 minutes (`sessionMinutes`). An engagement beacon is activity on the page it belongs to, so a long read stays one visit even when the beacon arrives after that gap. Sessions are not stored; they are rebuilt from events whenever a question needs them. That is how Tallymark answers:
 
 - **Bounce rate**: the share of sessions that were a single pageview.
 - **Time on site**: from the first event to the last sign of activity, including time spent reading the last page.
@@ -69,7 +69,7 @@ The **channel** is derived from the source:
 | Paid | `utm_medium` is `cpc`, `ppc`, `paid…`, `display`, `cpm`, `banner` or `retargeting` |
 | Email | `utm_medium` is `email` or `newsletter`, or `utm_source` is `email` or `newsletter` |
 | Social | `utm_medium=social`, or the referrer is a known social site (Facebook, X, LinkedIn, Reddit, YouTube, Hacker News, …) |
-| Organic Search | The referrer is a known search engine (Google, Bing, DuckDuckGo, Yahoo, Baidu, Yandex, Ecosia, Brave, …) |
+| Organic Search | The referrer is a known search engine (Google, Bing, DuckDuckGo, Yahoo, Baidu, Yandex, Ecosia, Brave, …). A lookalike such as `google.evil.com` stays a referral |
 | Referral | Any other referring site |
 | Campaign | A `utm_*` parameter with no referrer |
 | Direct | None of the above |
@@ -86,7 +86,7 @@ Without the script (for example, server-side tracking only), time on a page fall
 
 ## Bots and noise
 
-A request is ignored when the User-Agent looks automated (crawlers, headless browsers, HTTP libraries, uptime monitors), when it carries `DNT: 1` or `Sec-GPC: 1` (turn this off with `respectDnt: false`), when it is a browser prefetch or prerender, when the IP is in `excludeIps`, when the referrer is on a spam list (`blockedReferrers` extends it), or when the host is not in `allowedHosts`. The browser script additionally does nothing in an automated browser (`navigator.webdriver`), on `localhost` unless you ask, or when `localStorage.tallymark_ignore = 'true'` (a way for you to exclude yourself).
+A request is ignored when the User-Agent looks automated (crawlers, headless browsers, HTTP libraries, uptime monitors), when it carries `DNT: 1` or `Sec-GPC: 1` (turn this off with `respectDnt: false`), when it is a browser prefetch or prerender, when the IP is in `excludeIps`, when the referrer is on a spam list (`blockedReferrers` extends it), or when the host is not in `allowedHosts`. The browser script additionally does nothing in an automated browser (`navigator.webdriver`), on the loopback hosts `localhost`, `127.0.0.1` and `::1` unless you ask, or when `localStorage.tallymark_ignore = 'true'` (a way for you to exclude yourself). Other hostnames, including `localhost.com`, are recorded.
 
 ## Privacy
 

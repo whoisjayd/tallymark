@@ -54,15 +54,29 @@ export function nodeConn(req: NodeRequestLike, options: { trustProxy?: boolean }
   return { ip: options.trustProxy ? undefined : req.socket?.remoteAddress }
 }
 
+// Same ceiling as the import endpoint. Stop reading once it is passed.
+const MAX_NODE_BODY = 32 * 1024 * 1024
+
 export function nodeHandler(engine: Tallymark, options: { trustProxy?: boolean } = {}) {
   return async (req: NodeRequestLike, res: NodeResponseLike): Promise<void> => {
     const method = (req.method ?? 'GET').toUpperCase()
     let body: Uint8Array | undefined
     if (method !== 'GET' && method !== 'HEAD') {
       const parts: Uint8Array[] = []
-      for await (const chunk of req)
-        parts.push(typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk)
-      body = new Uint8Array(parts.reduce((n, p) => n + p.byteLength, 0))
+      let size = 0
+      for await (const chunk of req) {
+        const bytes = typeof chunk === 'string' ? new TextEncoder().encode(chunk) : chunk
+        size += bytes.byteLength
+        if (size > MAX_NODE_BODY) {
+          res.statusCode = 413
+          res.setHeader('content-type', 'application/json; charset=utf-8')
+          res.setHeader('cache-control', 'no-store')
+          res.end(JSON.stringify({ ok: false, error: 'too_large' }))
+          return
+        }
+        parts.push(bytes)
+      }
+      body = new Uint8Array(size)
       let off = 0
       for (const p of parts) {
         body.set(p, off)

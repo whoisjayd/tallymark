@@ -40,6 +40,12 @@ export class RateLimiter {
       for (const [k, v] of this.buckets) {
         if (!v.some((t) => now - t < this.windowMs)) this.buckets.delete(k)
       }
+      // Distinct keys, including spoofed forwarded IPs, must not grow without bound.
+      while (this.buckets.size > 5000) {
+        const oldest = this.buckets.keys().next().value
+        if (oldest === undefined) break
+        this.buckets.delete(oldest)
+      }
     }
     return false
   }
@@ -316,7 +322,10 @@ export function createHandler(
       case '/api/realtime':
         return json({ ok: true, data: await engine.realtime() })
       case '/api/events': {
-        const limit = Math.min(Number(p.get('limit') ?? 100) || 100, 5000)
+        const raw = Number(p.get('limit') ?? 100)
+        // `-1` is truthy, so `n || fallback` would pass it through. Postgres then
+        // rejects LIMIT -1 and the handler answers 500.
+        const limit = Number.isFinite(raw) ? Math.min(5000, Math.max(1, Math.floor(raw))) : 100
         return json({ ok: true, data: await engine.events(range, filters, limit) })
       }
       case '/api/export.csv': {

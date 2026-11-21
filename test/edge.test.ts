@@ -3,6 +3,7 @@ import type { EventStore } from '../src'
 import { createTallymark, memoryStore } from '../src'
 import { cloudflare } from '../src/cloudflare'
 import { clientIp, geoFromHeaders, parseUrl, sanitizeProps } from '../src/hit'
+import { RateLimiter } from '../src/http'
 import { timeseries, toCsv } from '../src/query'
 import { sqlStore } from '../src/stores'
 
@@ -102,6 +103,7 @@ describe('headers / geo / ip', () => {
       clientIp(new Headers({ 'cf-connecting-ip': '2001:db8::1', 'x-forwarded-for': '1.1.1.1' })),
     ).toBe('2001:db8::1')
     expect(clientIp(new Headers())).toBeNull()
+    expect(clientIp(new Headers({ 'x-forwarded-for': `${'1'.repeat(200)}, 1.1.1.1` }))).toBeNull()
   })
 
   test('trustProxy:false ignores spoofable headers; ConnInfo.ip is used', async () => {
@@ -122,6 +124,14 @@ describe('headers / geo / ip', () => {
       { ip: '4.4.4.4' },
     )
     expect(new Set((await a.events('24h')).map((x) => x.visitor)).size).toBe(1)
+  })
+
+  test('the rate limiter drops the oldest keys instead of growing without bound', () => {
+    const lim = new RateLimiter(1, 60_000)
+    expect(lim.hit('0', 1)).toBe(false)
+    expect(lim.hit('0', 1)).toBe(true)
+    for (let i = 1; i <= 5001; i++) expect(lim.hit(String(i), 1)).toBe(false)
+    expect(lim.hit('0', 1)).toBe(false)
   })
 
   test('without an IP the rate limiter does not make everyone share a bucket', async () => {
@@ -225,6 +235,24 @@ describe('read API edge cases', () => {
       new Request('http://x/api/summary', { headers: { authorization: 'bearer k' } }),
     )
     expect(res.status).toBe(200)
+  })
+
+  test('events filters apply before the limit, and a negative limit is clamped', async () => {
+    const a = createTallymark({ apiKey: 'k', secret: 's', now: () => T0 + 10_000 })
+    for (let i = 0; i < 4; i++)
+      await a.track({ url: `https://e.com/old`, userAgent: UA, ts: T0 + i, country: 'US' })
+    for (let i = 0; i < 4; i++)
+      await a.track({ url: 'https://e.com/new', userAgent: UA, ts: T0 + 100 + i, country: 'DE' })
+    const filtered = (await (
+      await get(a, `/api/events?from=${T0}&to=${T0 + 1000}&country=US&limit=2`)
+    ).json()) as { data: { country: string }[] }
+    expect(filtered.data).toHaveLength(2)
+    expect(filtered.data.every((e) => e.country === 'US')).toBe(true)
+    const negative = (await (
+      await get(a, `/api/events?from=${T0}&to=${T0 + 1000}&limit=-1`)
+    ).json()) as { data: { path: string }[] }
+    expect(negative.data).toHaveLength(1)
+    expect(negative.data[0]!.path).toBe('/new')
   })
 
   test('limit param is clamped and garbage-tolerant', async () => {
@@ -379,6 +407,21 @@ describe('query edge cases', () => {
     t = T0 + 61 * MIN + 1 // > 30 min after the last hit: new session
     await a.track({ url: '/c', userAgent: UA, ip: '1.1.1.1' })
     expect((await a.summary('24h')).sessions).toBe(2)
+  })
+
+  test('an engagement beacon with no pageview in range is not a visitor', async () => {
+    const a = createTallymark({ secret: 's', now: () => T0 + 20 * MIN })
+    await a.track({ url: 'https://e.com/a', userAgent: UA, ip: '1.1.1.1', ts: T0 })
+    await a.track({
+      name: 'engagement',
+      url: 'https://e.com/a',
+      userAgent: UA,
+      ip: '1.1.1.1',
+      ts: T0 + 10 * MIN,
+      duration: 10 * MIN,
+    })
+    const s = await a.summary({ from: T0 + 5 * MIN, to: T0 + 20 * MIN })
+    expect(s).toMatchObject({ pageviews: 0, visitors: 0, sessions: 0, events: 0 })
   })
 
   test('a lone custom event is not counted as a bounce', async () => {

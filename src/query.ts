@@ -106,11 +106,26 @@ const SOCIAL = [
   'news.ycombinator.com',
 ]
 
-/** `google` matches google.com and www.google.co.uk; `x.com` matches x.com and its subdomains. */
-const hostIs = (host: string, names: string[]) =>
-  names.some((n) =>
-    n.includes('.') ? host === n || host.endsWith(`.${n}`) : host.split('.').includes(n),
-  )
+/**
+ * `google` matches google.com and www.google.co.uk, where the only labels after
+ * the brand are a TLD. `google.evil.com` does not: `evil` is someone else's site.
+ * `x.com` matches that host and its subdomains.
+ */
+const hostIs = (host: string, names: string[]) => {
+  const h = host.toLowerCase()
+  return names.some((n) => {
+    if (n.includes('.')) return h === n || h.endsWith(`.${n}`)
+    const labels = h.split('.')
+    for (let i = labels.length - 1; i >= 0; i--) {
+      if (labels[i] !== n) continue
+      const rest = labels.slice(i + 1)
+      const head = rest[0]
+      if (rest.length === 1 || (rest.length === 2 && head !== undefined && head.length <= 3))
+        return true
+    }
+    return false
+  })
+}
 
 /** Where a visit came from, in the usual marketing buckets. */
 function channelOf(e: TallymarkEvent): string {
@@ -247,6 +262,22 @@ interface Session {
   end: number
 }
 
+/** Latest pageview of the same path. A later beacon replaces an earlier one. */
+function attachEngagement(cur: Session, e: TallymarkEvent): boolean {
+  for (let i = cur.hits.length - 1; i >= 0; i--) {
+    const h = cur.hits[i]!
+    if (h.type === 'pageview' && h.path === e.path) {
+      const prev = cur.engaged.get(h)
+      cur.engaged.set(h, {
+        ms: Math.max(prev?.ms ?? 0, e.duration ?? 0),
+        scroll: e.scroll ?? prev?.scroll ?? null,
+      })
+      return true
+    }
+  }
+  return false
+}
+
 /** Group a visitor's hits into sessions split by an inactivity gap. */
 function sessionize(events: TallymarkEvent[], gapMs: number): Session[] {
   const byVisitor = new Map<string, TallymarkEvent[]>()
@@ -260,28 +291,19 @@ function sessionize(events: TallymarkEvent[], gapMs: number): Session[] {
     list.sort((a, b) => a.ts - b.ts)
     let cur: Session | null = null
     for (const e of list) {
+      if (e.type === 'engagement') {
+        // The beacon is the delayed end of a page, sent when the reader leaves.
+        // It must not open a session of its own: a 45 minute article would
+        // otherwise look like 30 minutes of silence and lose its reading time.
+        if (cur && attachEngagement(cur, e)) cur.end = Math.max(cur.end, e.ts)
+        continue
+      }
       if (!cur || e.ts - cur.end > gapMs) {
         if (cur) sessions.push(cur)
         cur = { hits: [], engaged: new Map(), end: e.ts }
       }
       cur.end = Math.max(cur.end, e.ts)
-      if (e.type !== 'engagement') {
-        cur.hits.push(e)
-        continue
-      }
-      // An engagement beacon belongs to the latest pageview of the same path. It is
-      // cumulative, so a later one for the same page replaces an earlier one.
-      for (let i = cur.hits.length - 1; i >= 0; i--) {
-        const h = cur.hits[i]!
-        if (h.type === 'pageview' && h.path === e.path) {
-          const prev = cur.engaged.get(h)
-          cur.engaged.set(h, {
-            ms: Math.max(prev?.ms ?? 0, e.duration ?? 0),
-            scroll: e.scroll ?? prev?.scroll ?? null,
-          })
-          break
-        }
-      }
+      cur.hits.push(e)
     }
     if (cur) sessions.push(cur)
   }
@@ -337,7 +359,8 @@ export function summary(events: TallymarkEvent[], range: Range, sessionMinutes =
   return {
     range,
     pageviews,
-    visitors: new Set(events.map((e) => e.visitor)).size,
+    // A beacon is not a visit. Counting it would report a visitor with no pageview and no session.
+    visitors: new Set(events.filter((e) => e.type !== 'engagement').map((e) => e.visitor)).size,
     sessions: sessions.length,
     events: customEvents,
     revenue: round(revenue, 2),

@@ -30,7 +30,13 @@ function browser(
   }
   const history = {
     pushState(_s: unknown, _t: string, url: string) {
-      location.pathname = url
+      location.pathname = url.split('?')[0] ?? url
+      location.search = url.includes('?') ? url.slice(url.indexOf('?')) : ''
+      location.href = `https://${location.hostname}${url}`
+    },
+    replaceState(_s: unknown, _t: string, url: string) {
+      location.pathname = url.split('?')[0] ?? url
+      location.search = url.includes('?') ? url.slice(url.indexOf('?')) : ''
       location.href = `https://${location.hostname}${url}`
     },
   }
@@ -125,6 +131,7 @@ function browser(
       fire(docListeners, 'visibilitychange')
     },
     leave: () => fire(winListeners, 'pagehide'),
+    pageshow: (persisted = false) => fire(winListeners, 'pageshow', { persisted }),
     win,
     history,
   }
@@ -226,6 +233,9 @@ describe('tracker: pageviews and events', () => {
   test('sends nothing from localhost (unless allowed), automation, or an ignore flag', () => {
     expect(browser({ host: 'localhost' }).beacons.length).toBe(0)
     expect(browser({ host: '127.0.0.1' }).beacons.length).toBe(0)
+    expect(browser({ host: '::1' }).beacons.length).toBe(0)
+    expect(browser({ host: 'localhost.com' }).beacons.length).toBe(1)
+    expect(browser({ host: '127.0.0.1.nip.io' }).beacons.length).toBe(1)
     expect(browser({ host: 'localhost', dataset: { localhost: 'true' } }).beacons.length).toBe(1)
     expect(browser({ webdriver: true }).beacons.length).toBe(0)
     expect(browser({ ignore: true }).beacons.length).toBe(0)
@@ -269,6 +279,47 @@ describe('tracker: time on page', () => {
     b.hide()
     b.leave()
     expect(b.sent().filter((e) => e.name === 'engagement').length).toBe(1)
+  })
+
+  test('the load pageshow does not discard time already spent on the page', () => {
+    const b = browser()
+    b.advance(8_000)
+    b.pageshow(false)
+    b.advance(2_000)
+    b.leave()
+    expect(
+      b
+        .sent()
+        .filter((e) => e.name === 'engagement')
+        .map((e) => e.d),
+    ).toEqual([10_000])
+  })
+
+  test('time spent frozen in the back-forward cache is not engaged time', () => {
+    const b = browser()
+    b.advance(10_000)
+    b.leave()
+    b.advance(120_000)
+    b.pageshow(true)
+    b.advance(2_000)
+    b.leave()
+    const engagement = b.sent().filter((e) => e.name === 'engagement')
+    expect(engagement.map((e) => e.d)).toEqual([10_000, 12_000])
+  })
+
+  test('replaceState sends a pageview for an in-place URL change', () => {
+    const b = browser()
+    b.advance(3_000)
+    b.history.replaceState({}, '', '/pricing?plan=pro')
+    b.flush()
+    const kinds = b
+      .sent()
+      .map((e) => (e.name === 'engagement' ? `engagement ${e.d}` : `pageview ${e.url}`))
+    expect(kinds).toEqual([
+      'pageview https://example.com/start',
+      'engagement 3000',
+      'pageview https://example.com/pricing?plan=pro',
+    ])
   })
 
   test('a single-page navigation closes the page being left before opening the next', () => {

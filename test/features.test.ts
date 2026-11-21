@@ -456,6 +456,27 @@ describe('node adapter', () => {
     expect(r2.out.headers['content-type']).toContain('json')
   })
 
+  test('a body over 32 MB is refused without being passed to the handler', async () => {
+    const a = createTallymark({ secret: 's' })
+    const h = nodeHandler(a)
+    const { res, out } = fakeRes()
+    await h(
+      {
+        method: 'POST',
+        url: '/collect',
+        headers: { host: 'x.test' },
+        socket: { remoteAddress: '5.5.5.5' },
+        async *[Symbol.asyncIterator]() {
+          yield new Uint8Array(32 * 1024 * 1024 + 1)
+        },
+      } as any,
+      res,
+    )
+    expect(out.status).toBe(413)
+    expect(out.body).toContain('too_large')
+    expect(await a.events('24h')).toHaveLength(0)
+  })
+
   test('express-style mount prefix via originalUrl + basePath', async () => {
     const a = createTallymark({ basePath: '/analytics' })
     const h = nodeHandler(a)

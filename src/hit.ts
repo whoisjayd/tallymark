@@ -16,8 +16,9 @@ export interface UaInfo {
   bot: boolean
 }
 
+// `(?<!cu)` keeps phone brands such as Cubot. `bot` still matches Googlebot and bingbot.
 const BOT =
-  /bot|crawl|spider|slurp|headless|lighthouse|pagespeed|preview|facebookexternalhit|embedly|curl\/|wget|python-|httpclient|okhttp|monitor|uptime|pingdom|axios|node-fetch|undici|go-http|java\/|libwww|scrapy|phantomjs|selenium|puppeteer|playwright/i
+  /(?<!cu)bot|crawl|spider|slurp|headless|lighthouse|pagespeed|preview|facebookexternalhit|embedly|curl\/|wget|python-|httpclient|okhttp|monitor|uptime|pingdom|axios|node-fetch|undici|go-http|java\/|libwww|scrapy|phantomjs|selenium|puppeteer|playwright/i
 
 const BROWSERS: Array<[name: string, pattern: RegExp]> = [
   ['Edge', /Edg(?:e|A|iOS)?\/(\d+)/],
@@ -188,9 +189,12 @@ export function geoFromHeaders(h: Headers): Geo {
 
 export function clientIp(h: Headers): string | null {
   const direct = h.get('cf-connecting-ip') ?? h.get('x-real-ip')
-  if (direct) return direct.trim()
-  const xff = h.get('x-forwarded-for')
-  return xff ? (xff.split(',')[0]?.trim() ?? null) : null
+  const raw = direct ?? h.get('x-forwarded-for')?.split(',')[0]
+  if (!raw) return null
+  const ip = raw.trim()
+  // A forwarded header is attacker-controlled when the proxy did not overwrite it.
+  // Anything longer than an IP is not one, and must not become a rate-limit key.
+  return ip.length > 0 && ip.length <= 128 ? ip : null
 }
 
 // ── Referrer spam ─────────────────────────────────────────────────────────────

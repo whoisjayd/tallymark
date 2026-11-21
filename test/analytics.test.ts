@@ -153,6 +153,9 @@ describe('acquisition channels', () => {
     ['/?utm_medium=cpc&utm_source=google', 'https://www.google.com/', 'Paid'], // paid beats the search referrer
     ['/?utm_campaign=launch', undefined, 'Campaign'],
     ['/', 'https://notgoogle.example/', 'Referral'], // "google" must be a whole host label
+    ['/', 'https://google.evil.com/', 'Referral'], // a lookalike is not Google
+    ['/', 'https://www.facebook.evil.com/', 'Referral'],
+    ['/', 'https://www.google.com.au/', 'Organic Search'],
   ] as const)('%s from %s is %s', async (url, referrer, expected) => {
     expect(await channelOf(url, referrer)).toBe(expected)
   })
@@ -519,6 +522,18 @@ describe('session traces and journeys', () => {
     await hit('1.1.1.1', WIN, '/next', T0 + 50 * MIN) // 25 min after the last activity, not 50 after the first
     at(T0 + 60 * MIN)
     expect(await tm.sessions('24h')).toHaveLength(1)
+  })
+
+  test('a read longer than the session gap stays one visit and keeps its time', async () => {
+    const { tm, hit, at } = setup()
+    await hit('1.1.1.1', WIN, '/long', T0)
+    await hit('1.1.1.1', WIN, '/long', T0 + 45 * MIN, { name: 'engagement', duration: 45 * MIN })
+    await hit('1.1.1.1', WIN, '/next', T0 + 50 * MIN)
+    at(T0 + 60 * MIN)
+    const sessions = await tm.sessions('24h')
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.steps[0]).toMatchObject({ path: '/long', seconds: 45 * 60 })
+    expect(sessions[0]!.exit).toBe('/next')
   })
 
   test('journeys count the most common first pages, ignoring reloads', async () => {

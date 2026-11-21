@@ -208,7 +208,7 @@ curl -fsS -H "Authorization: Bearer $KEY" "$BASE/api/summary?range=1h"    # "pag
 | Symptom | Cause and fix |
 |---|---|
 | `/collect` answers 202 but nothing is stored | The hit was deliberately ignored: a bot-like User-Agent (curl, scripts), `DNT`/`Sec-GPC`, an excluded IP, a host not in `allowedHosts`, or referrer spam. Test with a browser-like User-Agent. In code, `track()` returns `{ ok: false, reason }`. |
-| The script sends nothing on localhost | Intended. Add `data-localhost="true"` to the script tag while developing. |
+| The script sends nothing on localhost | Intended for `localhost`, `127.0.0.1` and `::1` only. Add `data-localhost="true"` while developing. Other hostnames, including `localhost.com`, are recorded. |
 | Nothing is sent from an automated browser | Intended. The script ignores `navigator.webdriver`. |
 | Every route is 404 | `basePath` does not match the mount path, or the catch-all route file is missing. |
 | `/api/*` answers 401 | No `apiKey` configured, or the `Authorization: Bearer <key>` header is missing or wrong. |

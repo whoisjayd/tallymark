@@ -30,7 +30,8 @@ export const TRACKER = `(function () {
   var maxScroll = 0
 
   function skip() {
-    if (d.localhost !== 'true' && /^(localhost|127\\.|\\[::1\\])/.test(location.hostname)) return true
+    // Exact loopback names only: localhost, 127.0.0.1 and ::1. Not localhost.com.
+    if (d.localhost !== 'true' && /^(localhost|127(?:\\.\\d{1,3}){3}|::1)$/.test(location.hostname)) return true
     if (navigator.webdriver) return true
     try { return localStorage.getItem('tallymark_ignore') === 'true' } catch (e) { return false }
   }
@@ -47,7 +48,6 @@ export const TRACKER = `(function () {
   }
 
   function visible() { return document.visibilityState !== 'hidden' }
-  function total() { return engaged + (since ? Date.now() - since : 0) }
 
   function scrolled() {
     var el = document.documentElement
@@ -57,16 +57,21 @@ export const TRACKER = `(function () {
   }
 
   // Cumulative engaged time for the page being left. Sent again only if it grew.
+  // Close the open interval first: a page restored from the back-forward cache
+  // must not count the time it spent frozen.
   function report() {
     if (d.engagement === 'false' || !cur) return
-    var ms = total()
-    if (ms < 1 || ms === sent) return
-    sent = ms
-    send({ name: 'engagement', url: cur, d: ms, s: maxScroll })
+    if (since) {
+      engaged += Date.now() - since
+      since = 0
+    }
+    if (engaged < 1 || engaged === sent) return
+    sent = engaged
+    send({ name: 'engagement', url: cur, d: engaged, s: maxScroll })
   }
 
   var t = {
-    pageview: function () {
+    pageview: () => {
       var path = location.pathname + location.search
       if (path === last) return
       report()
@@ -81,32 +86,36 @@ export const TRACKER = `(function () {
       // The next page was reached from this one. Same-site referrers are dropped server-side.
       ref = cur
     },
-    track: function (name, props, value) {
+    track: (name, props, value) => {
       send({ name: name, url: location.href, props: props, value: value })
     }
   }
   window.tallymark = t
 
   document.addEventListener('visibilitychange', function () {
-    if (visible()) {
-      since = Date.now()
-    } else {
-      if (since) engaged += Date.now() - since
-      since = 0
-      report()
-    }
+    if (visible()) since = Date.now()
+    else report()
   })
   addEventListener('pagehide', report)
+  addEventListener('pageshow', function (e) {
+    // The first pageshow is the load itself. Only a page restored from the
+    // back-forward cache needs the clock started again.
+    if (e && e.persisted && visible()) since = Date.now()
+  })
   addEventListener('scroll', scrolled, { passive: true })
 
   if (d.auto !== 'false') {
-    // Single-page apps change the URL without a page load.
-    var push = history.pushState
-    history.pushState = function () {
-      var r = push.apply(this, arguments)
-      setTimeout(t.pageview, 0)
-      return r
+    // Single-page apps change the URL without a page load. replaceState covers
+    // routers that update the query string in place.
+    var wrap = function (fn) {
+      return function () {
+        var r = fn.apply(this, arguments)
+        setTimeout(t.pageview, 0)
+        return r
+      }
     }
+    if (history.pushState) history.pushState = wrap(history.pushState)
+    if (history.replaceState) history.replaceState = wrap(history.replaceState)
     addEventListener('popstate', t.pageview)
     if (document.visibilityState === 'prerender') {
       document.addEventListener('visibilitychange', t.pageview, { once: true })
