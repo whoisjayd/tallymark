@@ -1,0 +1,19 @@
+name: Feature request
+description: Something tallymark should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should it do?
+      description: A short sketch is enough. Privacy invariants in AGENTS.md still apply.
+  - type: markdown
+    attributes:
+      value: |
+        Security or privacy issue (stored IPs, leaked identifiers)? Do **not** file it here. See SECURITY.md.
