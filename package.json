@@ -1,6 +1,6 @@
 {
   "name": "tallymark",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Privacy-first, cookieless web analytics. A tiny typed library, a drop-in HTTP API and a browser script. Runs on Bun, Node, Cloudflare Workers, Vercel and any Fetch runtime.",
   "license": "AGPL-3.0-only",
   "author": "tallymark contributors",

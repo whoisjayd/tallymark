@@ -44,9 +44,15 @@ jobs:
       - run: bun run smoke
 
       - name: Publish to npm (with provenance)
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm install -g npm@11
+          # setup-node writes an _authToken line. A token, even an empty one,
+          # makes npm skip the trusted publisher and use the old credential.
+          if [ -f "$HOME/.npmrc" ]; then
+            grep -v '_authToken' "$HOME/.npmrc" > "$HOME/.npmrc.tmp"
+            mv "$HOME/.npmrc.tmp" "$HOME/.npmrc"
+          fi
+          npm publish --provenance --access public
 
       # The tracker is the string inside dist/script.js. There is no separate file to attach.
       - name: GitHub release (auto-generated notes)
