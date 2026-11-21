@@ -1,0 +1,207 @@
+name: ci
+
+# The workflow always starts, so branch protection can require the `ci` job.
+# Heavy jobs run only when the diff touches code. A documentation-only change
+# skips them and `ci` still reports success. Skipping the workflow itself would
+# leave a required check pending forever.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: what changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git fetch --no-tags origin "$BASE_REF"
+            files=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          elif ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          else
+            files=$(git diff --name-only "$BEFORE" "$SHA")
+          fi
+          printf '%s\n' "$files"
+          # Keep this list aligned with the paths in codeql.yml.
+          pattern='^(src/|test/|scripts/|\.github/workflows/|examples/.*\.(ts|tsx|js|jsx|mjs|cjs)$|package\.json$|bun\.lock$|tsconfig(\.build)?\.json$|biome\.json$|lefthook\.yml$|Dockerfile$|docker-compose\.yml$|\.dockerignore$|\.bun-version$)'
+          if printf '%s\n' "$files" | grep -Eq "$pattern"; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  format:
+    name: format and lint
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bunx biome ci .
+
+  check:
+    name: check (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build
+      - name: Smoke test the built package
+        run: bun run smoke
+
+  services:
+    name: real PostgreSQL and Redis
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Start Postgres, Redis and the Upstash-compatible proxy
+        run: docker compose up -d --wait
+      - name: Run the store contract suite against them
+        run: bun run test:services
+      - if: failure()
+        run: docker compose logs
+
+  package:
+    name: package is publishable
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: publint and are-the-types-wrong, against the packed tarball
+        run: bun run validate
+      - name: What would be published
+        run: npm pack --dry-run
+      - name: Zero runtime dependencies
+        run: |
+          node -e "const p=require('./package.json'); if (p.dependencies && Object.keys(p.dependencies).length) { console.error('runtime dependencies are not allowed:', p.dependencies); process.exit(1) }"
+
+  docker:
+    name: container image builds and runs
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: docker build -t tallymark:ci .
+      - name: Start it, send a hit, read it back, and check the data survives a restart
+        run: |
+          docker run -d --name tm -p 3000:3000 -v tm-data:/data -e TALLYMARK_SECRET=ci -e TALLYMARK_API_KEY=ci tallymark:ci
+          for i in $(seq 1 30); do curl -fs localhost:3000/health && break; sleep 1; done
+          UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36'
+          curl -fs -X POST localhost:3000/collect -H "user-agent: $UA" -d '{"url":"https://example.com/"}'
+          curl -fs -H 'authorization: Bearer ci' 'localhost:3000/api/summary?range=1h' | grep '"pageviews":1'
+          docker restart tm
+          for i in $(seq 1 30); do curl -fs localhost:3000/health && break; sleep 1; done
+          curl -fs -H 'authorization: Bearer ci' 'localhost:3000/api/summary?range=1h' | grep '"pageviews":1'
+      - if: failure()
+        run: docker logs tm
+
+  ci:
+    name: ci
+    needs: [changes, format, check, services, package, docker]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pass unless a code job failed
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          FORMAT: ${{ needs.format.result }}
+          CHECK: ${{ needs.check.result }}
+          SERVICES: ${{ needs.services.result }}
+          PACKAGE: ${{ needs.package.result }}
+          DOCKER: ${{ needs.docker.result }}
+        run: |
+          node <<'EOF'
+          const results = {
+            changes: process.env.CHANGES,
+            format: process.env.FORMAT,
+            check: process.env.CHECK,
+            services: process.env.SERVICES,
+            package: process.env.PACKAGE,
+            docker: process.env.DOCKER,
+          }
+          console.log(results)
+          const bad = Object.entries(results).filter(([, result]) => result !== 'success' && result !== 'skipped')
+          if (bad.length) {
+            console.error('failed:', bad.map(([name]) => name).join(', '))
+            process.exit(1)
+          }
+          EOF

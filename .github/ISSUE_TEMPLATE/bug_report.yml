@@ -1,0 +1,29 @@
+name: Bug report
+description: Something is wrong or surprising
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: A few lines using `createTallymark()` or a `curl` command is ideal.
+      render: ts
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options: [Bun, Cloudflare Workers, Vercel (Node), Vercel (Edge), Deno, Node, Other]
+  - type: input
+    id: version
+    attributes:
+      label: tallymark version
+  - type: markdown
+    attributes:
+      value: |
+        Security or privacy issue (stored IPs, leaked identifiers)? Do **not** file it here. See SECURITY.md.
