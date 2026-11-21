@@ -6,30 +6,82 @@
 </picture>
 
 **Count your visitors, not your visitors' data.**
+<!-- 
+A cookie banner means the analytics follows people.<br>
+Tallymark is a library that counts the visit and forgets the person.<br>
+At midnight UTC the same person becomes a different hash, so nobody can follow them into tomorrow.
 
-[Quick start](#quick-start) · [How it works](#how-it-works) · [Custom events](#custom-events) · [Reports](#what-you-can-ask) · [Deploy](./docs/DEPLOYMENT.md) · [Reference](./docs/USAGE.md) · [Examples](./examples/README.md)
+It is not a dashboard, not a hosted service, and not a record of who someone is. -->
+
+<br>
+
+[![CI](https://github.com/whoisjayd/tallymark/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/whoisjayd/tallymark/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](./LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Dependencies](https://img.shields.io/badge/dependencies-zero-f97316?style=flat-square)](./package.json)
+
+<br>
+
+[Quick start](#quick-start) · [Why a library](#why-a-library) · [How it works](#how-it-works) · [Reports](#what-you-can-ask) · [Storage](#storage) · [Docs](#documentation)
+
+<br>
+
+<img alt="Launch film. The tally closes, then the script tag, the daily hash, the runtimes, and the stores." src="./assets/launch.gif" width="880">
 
 </div>
 
-Tallymark is a small TypeScript library that tells you how many people visit your website or app, where they came from, what they looked at, and what they did. It uses no cookies and keeps nothing that identifies a person: a visitor is a hash that changes every day.
+<br>
 
-You can use it three ways, and they all share one engine:
+## Quick start
 
-- **As a script tag.** Add one line to your site and run the server (`bunx tallymark`, a Cloudflare Worker, a Vercel function).
-- **As a library.** Call `track()` from your own code and read answers back as typed objects. No server and no database are required.
-- **As an HTTP API.** Send hits and read reports from any language with `curl`.
+```bash
+bun add tallymark        # or: npm i tallymark · pnpm add tallymark
+```
 
-## Why
+The same engine runs three ways.
 
-Google Analytics tracks people across the web and needs a consent banner. Hosted privacy-friendly tools (Plausible, Fathom) are a service you pay for and cannot embed. Self-hosted ones (Umami, Plausible CE) are applications: a dashboard, a database, a deployment.
+### A script tag
 
-Tallymark is a **library** that does the counting. Embed it in the app you already have, put it behind your existing database, and build whatever interface you want on top of typed data. It also ships the pieces to run it standalone, so it is not either/or.
+```bash
+TALLYMARK_SECRET=$(openssl rand -hex 32) TALLYMARK_API_KEY=$(openssl rand -hex 24) bunx tallymark
+```
 
-It is not a dashboard (there is no UI), not a way to follow a person across days (that is the point), and not a data warehouse (reports are computed from stored events in memory; see [limits](./docs/HOW_IT_WORKS.md#limits)).
+```html
+<script defer src="http://localhost:3000/script.js" data-localhost="true"></script>
+```
+
+```bash
+curl -H "Authorization: Bearer $TALLYMARK_API_KEY" "http://localhost:3000/api/summary?range=24h"
+```
+
+The same server is a Cloudflare Worker or a Vercel function. See [Deploy](./docs/DEPLOYMENT.md).
+
+### Your own code
+
+No server and no database. `trackRequest()` reads the IP, browser, language and location from the request.
+
+```ts
+import { createTallymark } from 'tallymark'
+
+const tm = createTallymark({ secret: process.env.SECRET })
+
+await tm.trackRequest(request, { name: 'Signup', props: { plan: 'pro' }, value: 49 })
+
+await tm.summary('7d')
+await tm.top('country', '7d')
+await tm.top('channel', '7d')
+await tm.sessions('24h')
+```
+
+### Any language
+
+`POST /collect` and `GET /api/summary` are plain HTTP. Python, Go, PHP, Ruby, Java and curl are in [examples/http](./examples/http). Next.js, Vercel, Express, Hono, SvelteKit, Astro, Cloudflare Workers, Bun, Deno and React are in [examples/frameworks](./examples/frameworks).
+
+## Why a library
+
+Plausible and Fathom you rent. Umami and Plausible CE you deploy. This one is a dependency of the app you already have, it uses the database you already run, and the answers are typed values. See [limits](./docs/HOW_IT_WORKS.md#limits).
 
 ## How it works
-
-Hits come in from three places, Tallymark cleans and stores them, and you ask questions through the library or the HTTP API.
 
 ```mermaid
 flowchart LR
@@ -40,7 +92,7 @@ flowchart LR
     end
 
     subgraph TM["Tallymark"]
-        R["1. Read the request<br/>browser, device, location"] --> V["2. Hash the visitor<br/>changes daily, no IP kept"] --> E["3. Store the event"]
+        R["1. Read the request<br/>browser, device, location"] --> V["2. Hash the visitor"] --> E["3. Store the event"]
     end
 
     ST[("Store<br/>memory, SQLite, Postgres<br/>D1, Redis")]
@@ -73,7 +125,6 @@ sequenceDiagram
     T->>D: store the event
     V->>T: POST /collect (left after 40 s, scrolled 70%)
     T->>D: store the engagement
-    Note over V,D: No cookies. The IP and User-Agent are hashed, then forgotten.
     Y->>T: GET /api/summary
     T->>D: events for the range
     D-->>T: events
@@ -82,8 +133,8 @@ sequenceDiagram
 
 Three ideas are enough to use it:
 
-- **An event** is one thing that happened: a pageview, or a custom event you name (`Signup`, `Purchase`). It records the page, where the visitor came from, their browser and device, a coarse location, and any properties or value you attach. It never contains an IP address or a raw User-Agent.
-- **A visitor** is `hash(secret + today's date + site + IP + User-Agent)`. It lets Tallymark count unique people without storing who they are. Tomorrow the same person gets a different hash, so nobody (including you) can follow them across days.
+- **An event** is one thing that happened: a pageview, or a name you choose (`Signup`, `Purchase`). It records the page, where the visitor came from, their browser and device, a coarse location, and any properties or value you attach.
+- **A visitor** is `hash(secret + today's date + site + IP + User-Agent)`. The raw IP and User-Agent are not stored.
 - **A session** is one visit: a visitor's events, split when they go quiet for 30 minutes. A long read stays in that visit, because the engagement beacon counts as activity on the page it belongs to. Sessions are rebuilt when you ask a question, which is how bounce rate, time on site, entry and exit pages, and the path each visitor took are computed with no extra storage.
 
 ### What is automatic, and what you write
@@ -95,52 +146,12 @@ Three ideas are enough to use it:
 | Browser and version, OS, device, language, screen size | Nothing |
 | Country, region, city and timezone | Nothing, on Cloudflare or Vercel (read from their headers) |
 | Time on page and scroll depth | Nothing |
-| Clicks on outbound links and file downloads | One attribute on the script tag |
-| **Custom events** (`Signup`, `Purchase`) | An attribute, or one `track()` call, per event |
+| Clicks on outbound links and file downloads | `data-outbound` or `data-downloads` on the script tag. Stored as `outbound` and `download`. |
 | Bots, Do-Not-Track, prefetches and your own IPs are skipped | Nothing |
-
-## Quick start
-
-```bash
-bun add tallymark        # or: npm i tallymark · pnpm add tallymark
-```
-
-**Run it and add one line to your site** (the fastest way to see numbers):
-
-```bash
-TALLYMARK_SECRET=$(openssl rand -hex 32) TALLYMARK_API_KEY=$(openssl rand -hex 24) bunx tallymark
-```
-
-```html
-<script defer src="http://localhost:3000/script.js" data-localhost="true"></script>
-```
-
-```bash
-curl -H "Authorization: Bearer $TALLYMARK_API_KEY" "http://localhost:3000/api/summary?range=24h"
-```
-
-**Or use it as a library**, with no server and no database:
-
-```ts
-import { createTallymark } from 'tallymark'
-
-const tm = createTallymark({ secret: process.env.SECRET })
-
-// In any route that receives a visitor's request. Their IP, browser, language and location
-// are read from the request for you.
-await tm.trackRequest(request, { name: 'Signup', props: { plan: 'pro' }, value: 49 })
-
-await tm.summary('7d')              // visitors, pageviews, bounce rate, time on site, revenue
-await tm.top('country', '7d')       // where they are
-await tm.top('channel', '7d')       // how they found you
-await tm.sessions('24h')            // the pages each visitor went through, in order
-```
-
-Using a framework? There are complete, tested examples for Next.js, Vercel, Express, Hono, SvelteKit, Astro, Cloudflare Workers, Bun, Deno and React in [examples/frameworks](./examples/frameworks), and for Python, Go, PHP, Ruby, Java and curl in [examples/http](./examples/http).
 
 ## Custom events
 
-Pageviews and everything in the table above are automatic. An event is for what only you know matters. There are four ways to add one, and a [runnable example of each](./examples/events):
+Four ways to name one. A [runnable example of each](./examples/events) is in the repo.
 
 ```html
 <!-- 1. An attribute, no JavaScript. Properties are data-tally-<name>. -->
@@ -157,8 +168,6 @@ await tm.trackRequest(request, { name: 'Subscribe', props: { plan: 'free' }, val
 // 4. In React, anywhere:  import { track } from 'tallymark/react'
 track('Purchase', { sku: 'A1' }, 49)
 ```
-
-Links to other sites and file downloads are recorded as `outbound` and `download` events when you add `data-outbound="true"` or `data-downloads="true"` to the script tag.
 
 ## What you can ask
 
@@ -178,11 +187,11 @@ Every question takes a time range (`'24h'`, `'7d'`, `'30d'`, … or `{ from, to 
 
 **Dimensions** for `top()` and for filters: `path` `entry_page` `exit_page` `referrer` `source` `channel` `country` `continent` `region` `city` `timezone` `language` `browser` `browser_version` `os` `os_version` `device` `screen` `utm_source` `utm_medium` `utm_campaign` `utm_term` `utm_content` `event` `hostname` `weekday` `hour`, and `prop:<name>` for any custom property, such as `prop:plan`.
 
-The same questions are available over HTTP: `GET /api/summary`, `/api/top?by=channel`, `/api/sessions`, and so on. See the [reference](./docs/USAGE.md).
+The HTTP paths are in the [reference](./docs/USAGE.md).
 
 ## Storage
 
-Events go to a *store*. The default is memory, so nothing is needed to start. Every store passes the same test suite, and the PostgreSQL and Redis ones are tested against real servers.
+Events go to a *store*. Memory is the default. Every store passes the same test suite, and the PostgreSQL and Redis ones are tested against real servers.
 
 | Store | Use it for |
 |---|---|
@@ -206,9 +215,9 @@ Back up and restore with `export()` / `import()` (or `/api/export.ndjson`), betw
 - **[Deployment](./docs/DEPLOYMENT.md)**: Cloudflare, Vercel, Docker, reverse proxies, retention and backups.
 - **[Examples](./examples/README.md)**: runnable, commented, and checked.
 
-## Why "tallymark"?
+## The name
 
-A tally mark is the oldest way of counting: one stroke per thing, four upright and the fifth across them. It records that something happened and nothing about who it was. That is the whole idea of this library. (It is also why the logo looks the way it does.)
+A tally mark is the oldest way of counting: four upright strokes, and a fifth across them. That is the logo.
 
 ## Develop
 
