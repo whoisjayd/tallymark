@@ -11,7 +11,7 @@ import type { Tallymark } from './tallymark.js'
  *   export const { GET, POST, OPTIONS } = vercel(analytics, { waitUntil })
  *
  * Set `basePath: '/api/analytics'` on the instance so routes resolve under that path.
- * `waitUntil` is optional: with it, `forward` and `mirrorStore` work after the response is sent.
+ * `waitUntil` is optional: with it, `forward` runs after the response is sent. `mirrorStore` copies are awaited before the response.
  */
 export function vercel(
   tm: Tallymark,

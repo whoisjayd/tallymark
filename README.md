@@ -142,7 +142,7 @@ Three ideas are enough to use it:
 | What gets recorded | What you write |
 |---|---|
 | Pageviews, including single-page-app navigation | Nothing. One `<script>` tag (or `<Analytics />`) does it. |
-| Referrer, UTM campaign, and channel (Direct, Search, Social, Email, Paid) | Nothing |
+| Referrer, UTM campaign, and channel (Direct, Organic Search, Referral, Social, Email, Paid, Campaign) | Nothing |
 | Browser and version, OS, device, language, screen size | Nothing |
 | Country, region, city and timezone | Nothing, on Cloudflare or Vercel (read from their headers) |
 | Time on page and scroll depth | Nothing |
@@ -195,7 +195,7 @@ Events go to a *store*. Memory is the default. Every store passes the same test 
 
 | Store | Use it for |
 |---|---|
-| `memoryStore()` | Trying it out, tests. Lost on restart. |
+| `memoryStore()` | Trying it out, tests. Lost on restart, and keeps the newest 100,000 events (`maxEvents`). |
 | `bunSqliteStore(db)` | One server, a file on disk |
 | `pgStore(client)` | PostgreSQL: `pg`, Neon, Supabase, Vercel Postgres, RDS |
 | `d1Store(env.DB)` | Cloudflare Workers |

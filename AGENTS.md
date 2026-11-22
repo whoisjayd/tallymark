@@ -80,7 +80,7 @@ Conventional Commits, one logical change per commit, and each commit is a single
 <type>: <what changed, lowercase, imperative, no trailing period>
 ```
 
-- **One line only.** No body, no footer, no trailers. No `Co-Authored-By`, no sign-offs, no tool or AI attribution. The commit-msg hook rejects anything else. `Merge` and `Revert` lines are the exception git writes itself.
+- **One line only.** No body, no footer, no trailers. No `Co-Authored-By`, no sign-offs, no tool or AI attribution. The commit-msg hook rejects anything else. `Merge` and `Revert` lines are the exception git writes itself, and so are Dependabot's own commits: GitHub writes their body and trailers, and the hook runs only on local commits.
 - **Types:** `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `build`, `ci`, `chore`.
 - **Subject:** at most 72 characters, describing the change, not the file.
 - **Atomic means grouped, not tiny.** A commit holds every file that belongs to one logical change: a feature with its tests and docs, a set of related guides, a group of adapters. Never one file per commit, and never unrelated changes together. A fix and its regression test go in the same commit, and the tests pass at every commit.

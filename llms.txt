@@ -153,6 +153,8 @@ await tm.track({ url: 'https://app.example/start', ip, userAgent })   // pagevie
 await tm.summary('7d')
 ```
 
+`track()` works without `ip` and `userAgent` (webhooks, jobs), but then every such event shares one visitor id per day. Pass both when you have them. A browser hit that arrives without a `User-Agent` header is ignored as a bot.
+
 ## Custom events
 
 Pageviews, sources, devices, location, time on page and scroll depth are automatic. Add an event only for something that matters to the business. Name events in PascalCase and keep the set small and stable (`Signup`, `Purchase`, `Search`).

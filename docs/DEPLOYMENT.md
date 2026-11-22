@@ -70,7 +70,7 @@ export const GET = vercelCron(analytics, { secret: process.env.CRON_SECRET })
 { "crons": [{ "path": "/api/analytics-cron", "schedule": "0 3 * * *" }] }
 ```
 
-`waitUntil` is optional; with it, forwarding and mirroring continue after the response is sent. Vercel Cron sends `Authorization: Bearer $CRON_SECRET`, so set `CRON_SECRET` in the project settings; `vercelCron` refuses every call without it.
+`waitUntil` is optional; with it, forwarding continues after the response is sent. Mirror copies (`mirrorStore`) are written before the response, so a slow mirror slows the hit; a failing mirror is reported to `onError` and never fails it. Vercel Cron sends `Authorization: Bearer $CRON_SECRET`, so set `CRON_SECRET` in the project settings; `vercelCron` refuses every call without it.
 
 **Without a framework**, put the same `vercel(analytics)` in `/api/analytics.ts` and add a rewrite so sub-paths reach it ([example](../examples/frameworks/vercel)).
 
@@ -117,7 +117,7 @@ location / {
 }
 ```
 
-Without `TALLYMARK_TRUST_PROXY`, the socket address is used, which is right when the server is exposed directly.
+Without `TALLYMARK_TRUST_PROXY`, the socket address is used, which is right when the server is exposed directly. The library default is `trustProxy: true`, so set `trustProxy: false` on a server that clients reach directly: otherwise a client can forge `X-Forwarded-For` to dodge the rate limit and appear as new visitors.
 
 ## Node and Express
 

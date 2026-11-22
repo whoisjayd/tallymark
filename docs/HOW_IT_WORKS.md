@@ -67,9 +67,9 @@ The **channel** is derived from the source:
 | Channel | When |
 |---|---|
 | Paid | `utm_medium` is `cpc`, `ppc`, `paid…`, `display`, `cpm`, `banner` or `retargeting` |
-| Email | `utm_medium` is `email` or `newsletter`, or `utm_source` is `email` or `newsletter` |
+| Email | `utm_medium` is `email` or `newsletter`, or `utm_source` is `email` or `newsletter`, or the referrer is a webmail host such as `mail.google.com` or `outlook.live.com` |
 | Social | `utm_medium=social`, or the referrer is a known social site (Facebook, X, LinkedIn, Reddit, YouTube, Hacker News, …) |
-| Organic Search | The referrer is a known search engine (Google, Bing, DuckDuckGo, Yahoo, Baidu, Yandex, Ecosia, Brave, …). A lookalike such as `google.evil.com` stays a referral |
+| Organic Search | The referrer is a known search engine (Google, Bing, DuckDuckGo, Yahoo, Baidu, Yandex, Ecosia, Brave, …). A lookalike such as `google.evil.com` stays a referral, and so do `news.google.com`, `maps.google.com` and similar services on a search engine's domain |
 | Referral | Any other referring site |
 | Campaign | A `utm_*` parameter with no referrer |
 | Direct | None of the above |

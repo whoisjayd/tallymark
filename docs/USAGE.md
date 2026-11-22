@@ -17,7 +17,7 @@ The complete reference. For the ideas behind it, read [HOW_IT_WORKS.md](./HOW_IT
 
 | Import | What it gives you |
 |---|---|
-| `tallymark` | `createTallymark`, `memoryStore`, `mirrorStore`, `webhookSink`, `verifyWebhookSignature`, and every type |
+| `tallymark` | `createTallymark`, `memoryStore`, `mirrorStore`, `webhookSink`, `verifyWebhookSignature`, and every type, plus the dimension helpers `DIMENSIONS`, `TOP_DIMENSIONS`, `isDimension` and the guard `isTallymarkEvent` |
 | `tallymark/stores` | `bunSqliteStore`, `pgStore`, `postgresJsStore`, `d1Store`, `libsqlStore`, `upstashRestStore`, `upstashStore`, `redisStore`, `sqlStore`, plus `memoryStore` and `mirrorStore` |
 | `tallymark/react` | `<Analytics />` and `track()` |
 | `tallymark/node` | `nodeHandler`, `nodeRequest`, `nodeConn` for Express, Fastify and Node `http` |
@@ -47,7 +47,7 @@ Every option is optional.
 | `excludeIps` | none | Ignore hits from these IP addresses. |
 | `blockedReferrers` | none | Extra referrer hosts to treat as spam, on top of a built-in list. |
 | `respectDnt` | `true` | Ignore hits that send `DNT: 1` or `Sec-GPC: 1`. |
-| `rateLimit` | 120 per minute per IP | `{ max, windowMs }`, or `false`. Per process, best effort. |
+| `rateLimit` | 120 per minute per IP | `{ max, windowMs }`, or `false`. Per process, best effort. Hits with no known IP (`trustProxy: false` and no `info.ip`) are not limited. |
 | `trustProxy` | `true` | Read the visitor's IP and location from proxy headers (Cloudflare, Vercel, `X-Forwarded-For`). Set `false` unless a proxy you control sets them. |
 | `basePath` | `''` | The prefix the HTTP handler is mounted under, such as `/api/analytics`. |
 | `retentionDays` | keep forever | Age after which `prune()` deletes events. |
@@ -76,7 +76,7 @@ await tm.trackRequest(request, {
 
 ### `track(input, info?)`
 
-Use this when there is no visitor request (a webhook, a job). Everything but `url` is optional.
+Use this when there is no visitor request (a webhook, a job). Everything but `url` is optional. Without a `userAgent` the event is recorded with no browser, OS or device. Pass `ip` and `userAgent` if you have them, or every such event shares one visitor id per day.
 
 ```ts
 await tm.track({
@@ -108,7 +108,7 @@ Every method takes a **range** first: `'1h'`, `'24h'`, `'7d'`, `'30d'`, `'90d'`,
 | `journeys(range, filters?, { depth, limit }?)` | The most common first `depth` pages of a session (default 3), with `sessions` and `share` |
 | `realtime(minutes?)` | Visitors, pageviews and top pages in the last 5 minutes |
 | `events(range, filters?, limit?)` | The raw events, oldest first |
-| `export(range?, filters?)` / `import(ndjson)` | Backup and restore, one JSON event per line |
+| `export(range?, filters?)` / `import(ndjson)` | Backup and restore, one JSON event per line. `export` returns at most 1,000,000 events; `/api/export.csv` at most 100,000. SQL and Redis stores return at most 500,000 events per query. |
 | `prune()` | Deletes events older than `retentionDays`; returns how many |
 
 ### Dimensions
@@ -157,7 +157,7 @@ Settings are `data-` attributes on the tag:
 
 The script ignores automated browsers (`navigator.webdriver`) and any browser where `localStorage.tallymark_ignore` is `'true'`.
 
-In React, `<Analytics api="…" outbound downloads />` loads the script once, and `track(name, props?, value?)` sends an event.
+In React, `<Analytics api="…" outbound downloads localhost />` (`localhost` also records from localhost) loads the script once, and `track(name, props?, value?)` sends an event.
 
 ## The HTTP API
 
