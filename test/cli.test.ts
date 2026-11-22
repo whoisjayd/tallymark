@@ -89,6 +89,8 @@ describe('cli', () => {
       { PORT: 'abc' },
       { TALLYMARK_RETENTION_DAYS: '-1' },
       { TALLYMARK_STRICT_ORIGIN: 'true' },
+      { TALLYMARK_TRUST_PROXY: 'yes' },
+      { TALLYMARK_STRICT_ORIGIN: '1' },
     ]) {
       const proc = Bun.spawn(['bun', CLI], {
         env: { ...process.env, TALLYMARK_DB: ':memory:', ...env },

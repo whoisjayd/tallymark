@@ -43,6 +43,11 @@ const int = (name: string, fallback: number): number => {
     ? n
     : fail(`${name} must be a non-negative integer, got "${raw}"`)
 }
+const bool = (name: string): boolean => {
+  const raw = env[name]
+  if (raw === undefined || raw === '' || raw === 'false') return false
+  return raw === 'true' ? true : fail(`${name} must be true or false, got "${raw}"`)
+}
 
 if (!env.TALLYMARK_SECRET) {
   console.warn(
@@ -81,7 +86,8 @@ if (env.UPSTASH_REDIS_REST_URL && env.UPSTASH_REDIS_REST_TOKEN) {
 }
 
 // ── engine ───────────────────────────────────────────────────────────────
-const trustProxy = env.TALLYMARK_TRUST_PROXY === 'true'
+const trustProxy = bool('TALLYMARK_TRUST_PROXY')
+const strictOrigin = bool('TALLYMARK_STRICT_ORIGIN')
 
 const analytics = createTallymark({
   store,
@@ -91,7 +97,7 @@ const analytics = createTallymark({
   allowedHosts: list(env.TALLYMARK_HOSTS),
   excludeIps: list(env.TALLYMARK_EXCLUDE_IPS),
   blockedReferrers: list(env.TALLYMARK_BLOCKED_REFERRERS),
-  strictOrigin: env.TALLYMARK_STRICT_ORIGIN === 'true',
+  strictOrigin,
   retentionDays: int('TALLYMARK_RETENTION_DAYS', 0),
   // Behind nginx / Caddy / Cloudflare? Set TALLYMARK_TRUST_PROXY=true.
   trustProxy,
@@ -102,7 +108,7 @@ const analytics = createTallymark({
     console.error(`tallymark: ${where} failed:`, (error as Error)?.message ?? error),
 })
 
-if (env.TALLYMARK_STRICT_ORIGIN === 'true' && !env.TALLYMARK_HOSTS) {
+if (strictOrigin && !env.TALLYMARK_HOSTS) {
   fail('TALLYMARK_STRICT_ORIGIN=true requires TALLYMARK_HOSTS')
 }
 
