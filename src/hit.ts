@@ -29,6 +29,16 @@ const BROWSERS: Array<[name: string, pattern: RegExp]> = [
   ['Safari', /Version\/(\d+).*Safari/],
 ]
 
+/** What a server-side call with no user agent looks like: not a bot, nothing known. */
+export const NO_USER_AGENT: UaInfo = {
+  browser: null,
+  browserVersion: null,
+  os: null,
+  osVersion: null,
+  device: 'unknown',
+  bot: false,
+}
+
 /** Tiny, dependency-free UA parser. Browser family + major version, OS, and device class. */
 export function parseUserAgent(ua: string | null | undefined): UaInfo {
   const none: UaInfo = {
@@ -115,7 +125,7 @@ export function parseUrl(input: string): ParsedUrl | null {
     hostname: /^https?:\/\//i.test(input) ? stripWww(url.hostname) : '',
     path: path.slice(0, 300) || '/',
     utm: {
-      source: clean(q.get('utm_source') ?? q.get('ref') ?? q.get('source')),
+      source: clean(q.get('utm_source')) ?? clean(q.get('ref')) ?? clean(q.get('source')),
       medium: clean(q.get('utm_medium')),
       campaign: clean(q.get('utm_campaign')),
       term: clean(q.get('utm_term')),
@@ -175,10 +185,14 @@ export function timezone(v: string | null | undefined): string | null {
 
 export function geoFromHeaders(h: Headers): Geo {
   // Cloudflare. `XX` = unknown, `T1` = Tor.
-  const cf = val(h.get('cf-ipcountry'), 8)
-  const vercel = val(h.get('x-vercel-ip-country'), 8)
-  const raw = (cf ?? vercel ?? val(h.get('x-country-code'), 8))?.toUpperCase() ?? null
-  const country = raw && /^[A-Z]{2}$/.test(raw) && raw !== 'XX' && raw !== 'T1' ? raw : null
+  const code = (v: string | null) => {
+    const c = val(v, 8)?.toUpperCase() ?? null
+    return c && /^[A-Z]{2}$/.test(c) && c !== 'XX' && c !== 'T1' ? c : null
+  }
+  const country =
+    code(h.get('cf-ipcountry')) ??
+    code(h.get('x-vercel-ip-country')) ??
+    code(h.get('x-country-code'))
   return {
     country,
     region: val(h.get('cf-region') ?? h.get('x-vercel-ip-country-region')),

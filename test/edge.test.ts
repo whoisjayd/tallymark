@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { EventStore } from '../src'
-import { createTallymark, memoryStore } from '../src'
+import { createTallymark, memoryStore, mirrorStore } from '../src'
 import { cloudflare } from '../src/cloudflare'
 import { clientIp, geoFromHeaders, parseUrl, sanitizeProps } from '../src/hit'
 import { RateLimiter } from '../src/http'
@@ -466,5 +466,141 @@ describe('adapters', () => {
     await w.scheduled({}, env, { waitUntil: (p) => void waited.push(p) })
     expect(waited.length).toBe(1)
     await Promise.all(waited)
+  })
+})
+
+describe('review fixes', () => {
+  const get = (a: ReturnType<typeof createTallymark>, path: string) =>
+    a.handle(new Request(`http://x${path}`, { headers: { authorization: 'Bearer k' } }))
+
+  test('track() without a user agent records a server-side event', async () => {
+    const a = createTallymark({ secret: 's', now: () => T0 })
+    const r = await a.track({ url: 'https://example.com/', name: 'Purchase' })
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.event.browser).toBeNull()
+  })
+
+  test('a browser hit with no user-agent header is still ignored as a bot', async () => {
+    const a = createTallymark({ secret: 's', now: () => T0 })
+    const res = await a.handle(
+      new Request('http://x/collect', {
+        method: 'POST',
+        body: JSON.stringify({ url: 'https://example.com/' }),
+      }),
+    )
+    expect(res.status).toBe(202)
+    expect(((await res.json()) as any).ignored).toBe('bot')
+    const r = await a.trackRequest(new Request('https://example.com/'), { name: 'x' })
+    expect(r).toEqual({ ok: false, reason: 'bot' })
+  })
+
+  test('an unparseable `to` is a 400, not "now"', async () => {
+    const a = createTallymark({ apiKey: 'k', now: () => T0 })
+    expect((await get(a, '/api/summary?from=1&to=garbage')).status).toBe(400)
+    expect((await get(a, '/api/summary?from=1')).status).toBe(200)
+  })
+
+  test('a basePath only matches whole path segments', async () => {
+    const a = createTallymark({ apiKey: 'k', basePath: '/a' })
+    expect((await a.handle(new Request('http://x/a/health'))).status).toBe(200)
+    expect((await a.handle(new Request('http://x/ab/health'))).status).toBe(404)
+  })
+
+  test('an unknown country code from one header falls back to the next', () => {
+    const h = new Headers({ 'cf-ipcountry': 'XX', 'x-vercel-ip-country': 'DE' })
+    expect(geoFromHeaders(h).country).toBe('DE')
+  })
+
+  test('an empty utm_source falls back to ref', () => {
+    expect(parseUrl('https://example.com/?utm_source=&ref=news')!.utm.source).toBe('news')
+  })
+})
+
+describe('review fixes, round two', () => {
+  const ev = (over: Record<string, unknown> = {}) =>
+    ({
+      id: 'e1',
+      type: 'event',
+      name: 'Refund',
+      ts: T0,
+      visitor: 'v',
+      hostname: '',
+      path: '/',
+      referrer: null,
+      referrerHost: null,
+      utm: { source: null, medium: null, campaign: null, term: null, content: null },
+      browser: null,
+      browserVersion: null,
+      os: null,
+      osVersion: null,
+      device: 'unknown',
+      screen: null,
+      country: null,
+      region: null,
+      city: null,
+      timezone: null,
+      language: null,
+      props: {},
+      value: -5,
+      duration: null,
+      scroll: null,
+      ...over,
+    }) as any
+
+  test('a negative value exports as a number, text that looks like a formula is still defused', () => {
+    const lines = toCsv([ev(), ev({ id: 'e2', name: '=SUM(A1)', value: null })]).split('\n')
+    expect(lines[1]).toContain(',-5,')
+    expect(lines[1]).not.toContain("'-5")
+    expect(lines[2]).toContain("'=SUM(A1)")
+  })
+
+  test('track() rejects a timestamp that is not a finite number', async () => {
+    const a = createTallymark({ secret: 's' })
+    expect(await a.track({ url: 'https://example.com/', ts: Number.NaN })).toEqual({
+      ok: false,
+      reason: 'invalid',
+    })
+  })
+
+  test('a mirror that throws synchronously or fails to prune never fails the primary', async () => {
+    const seen: number[] = []
+    const primary = memoryStore()
+    const bad: EventStore = {
+      insert: () => {
+        throw new Error('sync boom')
+      },
+      list: async () => [],
+      prune: async () => {
+        throw new Error('prune boom')
+      },
+    }
+    const m = mirrorStore(primary, bad, { onError: (_e, i) => seen.push(i) })
+    await m.insert(ev())
+    expect(await primary.list({ from: 0, to: T0 + 1 })).toHaveLength(1)
+    await m.prune?.(T0 + 1)
+    expect(seen).toEqual([0, 0])
+  })
+})
+
+describe('channels', () => {
+  test('webmail and news readers on a search domain are not Organic Search', async () => {
+    const tm = createTallymark({ secret: 's', apiKey: 'k', now: () => T0 })
+    const channelFor = async (referrer: string, i: number) => {
+      await tm.track({
+        url: 'https://example.com/',
+        referrer,
+        ip: `1.1.1.${i}`,
+        userAgent: UA,
+        ts: T0 - 1000,
+      })
+    }
+    await channelFor('https://mail.google.com/', 1)
+    await channelFor('https://news.google.com/', 2)
+    await channelFor('https://www.google.com/search', 3)
+    const rows = await tm.top('channel', '24h')
+    const n = (k: string) => rows.find((r) => r.key === k)?.count
+    expect(n('Email')).toBe(1)
+    expect(n('Referral')).toBe(1)
+    expect(n('Organic Search')).toBe(1)
   })
 })

@@ -127,6 +127,9 @@ const hostIs = (host: string, names: string[]) => {
   })
 }
 
+const WEBMAIL = /^(mail|webmail|email|outlook|inbox)\./i
+const NOT_SEARCH = /^(news|mail|webmail|email|outlook|inbox|finance|maps|translate)\./i
+
 /** Where a visit came from, in the usual marketing buckets. */
 function channelOf(e: TallymarkEvent): string {
   const medium = e.utm.medium?.toLowerCase() ?? ''
@@ -135,8 +138,10 @@ function channelOf(e: TallymarkEvent): string {
     return 'Paid'
   if (/^(e-?mail|newsletter)/.test(medium) || /^(e-?mail|newsletter)$/i.test(e.utm.source ?? ''))
     return 'Email'
+  // Webmail and news readers sit on search engines' domains but are not search.
+  if (host && WEBMAIL.test(host)) return 'Email'
   if (medium === 'social' || (host && hostIs(host, SOCIAL))) return 'Social'
-  if (host && hostIs(host, SEARCH)) return 'Organic Search'
+  if (host && !NOT_SEARCH.test(host) && hostIs(host, SEARCH)) return 'Organic Search'
   if (host) return 'Referral'
   if (e.utm.source || e.utm.campaign || e.utm.medium) return 'Campaign'
   return 'Direct'
@@ -703,8 +708,8 @@ export function realtime(events: TallymarkEvent[], now: number, windowMinutes = 
 
 const csvCell = (v: unknown): string => {
   let s = v === null || v === undefined ? '' : String(v)
-  // Neutralise spreadsheet formula injection.
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`
+  // Neutralise spreadsheet formula injection in text. A real number such as a -5 refund stays a number.
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 

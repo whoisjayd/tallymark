@@ -177,6 +177,8 @@ export function createHandler(
 
     const trust = o.trustProxy ?? true
     const facts = describeRequest(req, info, trust)
+    // A browser always sends a user agent. Without one it is a script.
+    if (!facts.userAgent) return ignored('bot')
     const ip = facts.ip
     // No IP means no honest bucket key. A shared bucket would let one client
     // throttle everyone, so limit only when we can tell clients apart.
@@ -234,7 +236,8 @@ export function createHandler(
     const to = p.get('to')
     if (from || to) {
       const f = toMs(from)
-      const t = toMs(to) ?? now() + 1
+      const t = to ? toMs(to) : now() + 1
+      // A bound that is given but unparseable is an error, not a default.
       if (f === null || t === null || f >= t) return { error: 'bad_range' }
       return { from: f, to: t }
     }

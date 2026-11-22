@@ -536,24 +536,30 @@ export function mirrorStore(
   options: { onError?: (error: unknown, mirrorIndex: number) => void } = {},
 ): EventStore {
   const copies = Array.isArray(mirrors) ? mirrors : [mirrors]
+  // `Promise.resolve().then` also catches a mirror that throws before it returns a promise.
+  const eachMirror = async (job: (m: EventStore) => unknown) => {
+    const results = await Promise.allSettled(
+      copies.map((m) => Promise.resolve().then(() => job(m))),
+    )
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        try {
+          options.onError?.(r.reason, i)
+        } catch {
+          /* a broken logger must not break the hit */
+        }
+      }
+    })
+  }
   return {
     async insert(event: TallymarkEvent) {
       await primary.insert(event)
-      const results = await Promise.allSettled(copies.map((m) => m.insert(event)))
-      results.forEach((r, i) => {
-        if (r.status === 'rejected') {
-          try {
-            options.onError?.(r.reason, i)
-          } catch {
-            /* a broken logger must not break the hit */
-          }
-        }
-      })
+      await eachMirror((m) => m.insert(event))
     },
     list: (q: ListQuery) => primary.list(q),
     async prune(before) {
       const n = (await primary.prune?.(before)) ?? 0
-      await Promise.allSettled(copies.map((m) => m.prune?.(before)))
+      await eachMirror((m) => m.prune?.(before))
       return n
     },
   }

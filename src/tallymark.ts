@@ -1,6 +1,7 @@
 import {
   describeRequest,
   isSpamReferrer,
+  NO_USER_AGENT,
   parseReferrer,
   parseUrl,
   parseUserAgent,
@@ -185,7 +186,9 @@ export function createTallymark(options: TallymarkOptions = {}): Tallymark {
 
       if (input.ip && excludeIps.has(input.ip)) return { ok: false, reason: 'excluded' }
 
-      const ua = parseUserAgent(input.userAgent)
+      // No user agent at all means a server-side call (a webhook, a job), not a bot.
+      // Requests from a browser without one are rejected before they reach track().
+      const ua = input.userAgent == null ? NO_USER_AGENT : parseUserAgent(input.userAgent)
       if (ua.bot) return { ok: false, reason: 'bot' }
 
       const name = (input.name ?? 'pageview').trim().slice(0, 80)
@@ -203,6 +206,7 @@ export function createTallymark(options: TallymarkOptions = {}): Tallymark {
       if (isSpamReferrer(ref.host, options.blockedReferrers)) return { ok: false, reason: 'spam' }
 
       const ts = input.ts ?? now()
+      if (!Number.isFinite(ts)) return { ok: false, reason: 'invalid' }
       const value =
         typeof input.value === 'number' && Number.isFinite(input.value) ? input.value : null
 
@@ -265,6 +269,7 @@ export function createTallymark(options: TallymarkOptions = {}): Tallymark {
       ) {
         return { ok: false, reason: 'dnt' }
       }
+      if (!request.headers.get('user-agent')) return { ok: false, reason: 'bot' }
       const { name, url, props, value } = event
       return engine.track(
         {
