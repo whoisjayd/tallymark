@@ -56,7 +56,7 @@ jobs:
 
       # The tracker is the string inside dist/script.js. There is no separate file to attach.
       - name: GitHub release (auto-generated notes)
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
 
